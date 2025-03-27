@@ -1,0 +1,29 @@
+[project]
+name = "nothingburger"
+version = "0.0.01"
+authors = [
+    { name = "Keyton Stanier" },
+]
+description = "Minimalistic man-made burgers of data and words for interfacing with LLMs and beyond"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["nothing", "burger", "llm", "chain", "text-generation"]
+license = { text = "idfk yet" }
+dependencies = [
+    'python-dotenv',
+    'Jinja2',
+    'llama-cpp-python',
+    'ctransformers',
+    'openai',
+    'transformers',
+    'ollama',
+    'zulip',
+    'mattermostdriver',
+    'mautrix',
+    'selenium',
+    'pandoc',
+    'chromadb',
+    #'psycopg2',
+    'psycopg2-binary',
+]
+
