@@ -23,7 +23,14 @@ dependencies = [
     'selenium',
     'pandoc',
     'chromadb',
-    #'psycopg2',
     'psycopg2-binary',
+    'tomli-w',  # For TOML writing in config TUI
 ]
 
+[project.optional-dependencies]
+tui = ['rich']  # Enhanced TUI experience
+
+[project.scripts]
+nothingburger = "nothingburger.cli:main"
+burger = "nothingburger.cli:main"  # Shorter alias
+burger-config = "nothingburger.config_tui:main"  # Direct access to config TUI

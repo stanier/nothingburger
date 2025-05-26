@@ -238,7 +238,7 @@ def loadModel(options):
 
             return OllamaAdapter(options)
 
-        case ["openai", "hf_endpoints", "text-generation-inference"]:
+        case "openai":
             from openai import OpenAI
 
             class OpenaiAdapter(Adapter):
@@ -248,32 +248,104 @@ def loadModel(options):
                         base_url    = self.options['service']['base_url'],
                         api_key     = self.options['service']['api_key'],
                     )
+                    # Default to chat format for modern models
+                    self.api_format = self.options['service'].get('api_format', 'chat')
 
-                def count_tokens(self, prompt):
-                    response = self.client.completions.create(
-                        model               = self.options['model_key'],
-                        prompt              = prompt,
-                        max_tokens          = 0,
-                    )
-                    return response.usage.prompt_tokens
+                def count_tokens(self, prompt_or_messages):
+                    if self.api_format == 'chat':
+                        # For chat format, we need to estimate tokens from messages
+                        if isinstance(prompt_or_messages, list):
+                            # Already in message format
+                            total_content = ' '.join([msg.get('content', '') for msg in prompt_or_messages])
+                        else:
+                            # Convert prompt to messages for estimation
+                            total_content = str(prompt_or_messages)
+                        # Rough estimation - in production you'd use tiktoken
+                        return len(total_content.split()) * 1.3
+                    else:
+                        # Legacy completions format
+                        response = self.client.completions.create(
+                            model=self.options['service']['model_key'],
+                            prompt=prompt_or_messages,
+                            max_tokens=0,
+                        )
+                        return response.usage.prompt_tokens
+
+                def _convert_prompt_to_messages(self, prompt, instruction=None):
+                    """Convert a formatted prompt string to chat messages format."""
+                    messages = []
+                    
+                    if instruction:
+                        messages.append({"role": "system", "content": instruction})
+                    
+                    # For simple prompts, treat as user message
+                    if isinstance(prompt, str):
+                        messages.append({"role": "user", "content": prompt})
+                    
+                    return messages
+
+                def _extract_messages_from_memory(self, memory, instruction=None):
+                    """Extract messages from conversational memory."""
+                    messages = []
+                    
+                    if instruction:
+                        messages.append({"role": "system", "content": instruction})
+                    
+                    if memory and hasattr(memory, 'messages'):
+                        for msg in memory.messages:
+                            role = "assistant" if msg['role'] in ['assistant', 'Assistant'] else "user"
+                            messages.append({
+                                "role": role,
+                                "content": msg['content']
+                            })
+                    
+                    return messages
 
                 def generate(self, prompt, **kwargs):
-                    response = self.client.completions.create(
-                        model               = model             or self.options['model_key'],
-                        prompt              = prompt,
-                        max_tokens          = kwargs.get('max_tokens'       , self.options['generation'].get('max_tokens'       , DEFAULTS["MAX_TOKENS"]        )),
-                        seed                = kwargs.get('seed'             , self.options['generation'].get('seed'             , DEFAULTS["SEED"]              )),
-                        stop                = kwargs.get('stop'             , self.options['generation'].get('stop'             , DEFAULTS["STOP"]              )),
-                        top_p               = kwargs.get('top_p'            , self.options['generation'].get('top_p'            , DEFAULTS["TOP_P"]             )),
-                        top_k               = kwargs.get('top_k'            , self.options['generation'].get('top_k'            , DEFAULTS["TOP_K"]             )),
-                        temperature         = kwargs.get('temperature'      , self.options['generation'].get('temperature'      , DEFAULTS["TEMPERATURE"]       )),
-                        presence_penalty    = kwargs.get('presence_penalty' , self.options['generation'].get('presence_penalty' , DEFAULTS["PRESENCE_PENALTY"]  )),
-                        frequency_penalty   = kwargs.get('frequency_penalty', self.options['generation'].get('frequency_penalty', DEFAULTS["FREQUENCY_PENALTY"] )),
-                        logit_bias          = kwargs.get('logit_bias'       , self.options['generation'].get('logit_bias'       , DEFAULTS["LOGIT_BIAS"]        )),
-                        logprobs            = kwargs.get('logprobs'         , self.options['generation'].get('logprobs'         , DEFAULTS["LOGPROBS"]          )),
-                        #n                   = kwargs.get('n'                , self.options['generation'].get('n'                , DEFAULTS["N"]                 )),
-                        **kwargs,
-                    )
-                    return response.choices[0].text.strip()
+                    model_key = kwargs.get('model', self.options['service']['model_key'])
+                    
+                    if self.api_format == 'chat':
+                        # Modern chat completions API
+                        memory = kwargs.get('memory')
+                        instruction = kwargs.get('instruction')
+                        
+                        if memory and hasattr(memory, 'messages') and len(memory.messages) > 0:
+                            # Use conversational memory to build messages
+                            messages = self._extract_messages_from_memory(memory, instruction)
+                            # Add the current prompt as the latest user message
+                            messages.append({"role": "user", "content": prompt})
+                        else:
+                            # Convert prompt to messages format
+                            messages = self._convert_prompt_to_messages(prompt, instruction)
+                        
+                        response = self.client.chat.completions.create(
+                            model=model_key,
+                            messages=messages,
+                            max_tokens=kwargs.get('max_tokens', self.options['generation'].get('max_tokens', DEFAULTS["MAX_TOKENS"])),
+                            temperature=kwargs.get('temperature', self.options['generation'].get('temperature', DEFAULTS["TEMPERATURE"])),
+                            top_p=kwargs.get('top_p', self.options['generation'].get('top_p', DEFAULTS["TOP_P"])),
+                            presence_penalty=kwargs.get('presence_penalty', self.options['generation'].get('presence_penalty', DEFAULTS["PRESENCE_PENALTY"])),
+                            frequency_penalty=kwargs.get('frequency_penalty', self.options['generation'].get('frequency_penalty', DEFAULTS["FREQUENCY_PENALTY"])),
+                            seed=kwargs.get('seed', self.options['generation'].get('seed', DEFAULTS["SEED"])),
+                            stop=kwargs.get('stop', self.options['generation'].get('stop', DEFAULTS["STOP"])),
+                        )
+                        return response.choices[0].message.content.strip()
+                    
+                    else:
+                        # Legacy completions API
+                        response = self.client.completions.create(
+                            model=model_key,
+                            prompt=prompt,
+                            max_tokens=kwargs.get('max_tokens', self.options['generation'].get('max_tokens', DEFAULTS["MAX_TOKENS"])),
+                            seed=kwargs.get('seed', self.options['generation'].get('seed', DEFAULTS["SEED"])),
+                            stop=kwargs.get('stop', self.options['generation'].get('stop', DEFAULTS["STOP"])),
+                            top_p=kwargs.get('top_p', self.options['generation'].get('top_p', DEFAULTS["TOP_P"])),
+                            temperature=kwargs.get('temperature', self.options['generation'].get('temperature', DEFAULTS["TEMPERATURE"])),
+                            presence_penalty=kwargs.get('presence_penalty', self.options['generation'].get('presence_penalty', DEFAULTS["PRESENCE_PENALTY"])),
+                            frequency_penalty=kwargs.get('frequency_penalty', self.options['generation'].get('frequency_penalty', DEFAULTS["FREQUENCY_PENALTY"])),
+                            logit_bias=kwargs.get('logit_bias', self.options['generation'].get('logit_bias', DEFAULTS["LOGIT_BIAS"])),
+                            logprobs=kwargs.get('logprobs', self.options['generation'].get('logprobs', DEFAULTS["LOGPROBS"])),
+                        )
+                        return response.choices[0].text.strip()
 
             return OpenaiAdapter(options)
