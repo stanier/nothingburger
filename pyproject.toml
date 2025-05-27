@@ -1,36 +1,41 @@
 [project]
 name = "nothingburger"
-version = "0.0.01"
+version = "0.0.2"
 authors = [
     { name = "Keyton Stanier" },
 ]
-description = "Minimalistic man-made burgers of data and words for interfacing with LLMs and beyond"
+description = "Minimalistic framework for interfacing with LLMs"
 readme = "README.md"
 requires-python = ">=3.9"
-keywords = ["nothing", "burger", "llm", "chain", "text-generation"]
-license = { text = "idfk yet" }
+keywords = ["llm", "chain", "text-generation", "minimalist", "openai", "ollama"]
+license = { text = "MIT" }
 dependencies = [
-    'python-dotenv',
-    'Jinja2',
-    'llama-cpp-python',
-    'ctransformers',
-    'openai',
-    'transformers',
-    'ollama',
-    'zulip',
-    'mattermostdriver',
-    'mautrix',
-    'selenium',
-    'pandoc',
-    'chromadb',
-    'psycopg2-binary',
-    'tomli-w',  # For TOML writing in config TUI
+    'Jinja2',           # Template engine
+    'python-dotenv',    # Environment variables
 ]
 
 [project.optional-dependencies]
-tui = ['rich']  # Enhanced TUI experience
+# Model providers (install only what you need)
+openai = ['openai']
+ollama = ['ollama'] 
+llamacpp = ['llama-cpp-python']
+transformers = ['transformers']
+ctransformers = ['ctransformers']
+
+# All model providers
+models = [
+    'openai', 
+    'ollama', 
+    'llama-cpp-python', 
+    'transformers', 
+    'ctransformers'
+]
 
 [project.scripts]
 nothingburger = "nothingburger.cli:main"
-burger = "nothingburger.cli:main"  # Shorter alias
-burger-config = "nothingburger.config_tui:main"  # Direct access to config TUI
+burger = "nothingburger.cli:main"
+burger-config = "nothingburger.config_tui:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
