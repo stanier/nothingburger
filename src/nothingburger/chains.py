@@ -17,9 +17,9 @@ class Chain:
 
     def generate(self, inp, **kwargs):
         prompt = self.template.render(inp=inp)
-        if self.debug: print(prompt)
+        if self.debug: print(f"Generated prompt: {prompt}")
         result = self.model.generate(prompt, stream=self.stream, **kwargs)
-        if self.debug: print(result)
+        if self.debug: print(f"Model response: {result}")
         return result
 
 class InstructChain(Chain):
@@ -36,9 +36,9 @@ class InstructChain(Chain):
             instruction=kwargs.get('instruction', self.instruction),
             response_prefix=kwargs.get('response_prefix', self.response_prefix),
         )
-        if self.debug: print(prompt)
+        if self.debug: print(f"Generated prompt: {prompt}")
         result = self.model.generate(prompt, stream=self.stream, **kwargs)
-        if self.debug: print(result)
+        if self.debug: print(f"Model response: {result}")
         return result
 
 class ChatChain(InstructChain):
@@ -61,14 +61,23 @@ class ChatChain(InstructChain):
         self.memory = kwargs.get('memory', ConversationalMemory())
         self.stop = kwargs.get('stop', [])
         self.use_chat_format = getattr(self.model, 'api_format', 'completions') == 'chat'
+        self.active_tools = kwargs.get('active_tools', {})  # Store active tools
 
     def generate(self, inp, **kwargs):
         template = kwargs.get('template', self.template)
         memory = kwargs.get('memory', self.memory)
         
+        # Always pass active_tools to the model for function calling
+        if self.active_tools:
+            kwargs['active_tools'] = self.active_tools
+        
         if self.use_chat_format:
+            # For chat format, pass instruction and memory directly to model
+            kwargs['instruction'] = kwargs.get('instruction', self.instruction)
+            kwargs['memory'] = memory
             result = self.model.generate(inp, **kwargs)
         else:
+            # For completion format, use template rendering
             prompt = template.render(
                 inp=inp,
                 instruction=kwargs.get('instruction', self.instruction),
@@ -80,12 +89,14 @@ class ChatChain(InstructChain):
                 user_suffix=kwargs.get('user_suffix', self.user_suffix),
                 memory=memory,
             )
-            if self.debug: print(prompt)
+            if self.debug: print(f"Generated prompt: {prompt}")
             result = self.model.generate(prompt, **kwargs)
         
+        # Add user message to memory
         memory.add_message(kwargs.get('user_prefix', self.user_prefix), inp)
         
-        if self.debug and not self.stream: print(result)
+        if self.debug and not self.stream: 
+            print(f"Final model response: {result}")
 
         if self.stream:
             def stream_handler(result):
@@ -97,6 +108,7 @@ class ChatChain(InstructChain):
                 return result
             return stream_handler(result)
         else:
+            # Add assistant response to memory
             memory.add_message(kwargs.get('assistant_prefix', self.assistant_prefix), result)
 
         return result
